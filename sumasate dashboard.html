@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>スマサテ 商談ダッシュボード</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+:root{
+  --bg:#0d0d1a; --surface:#131326; --surface2:#1a1a30; --surface3:#22223a;
+  --border:rgba(255,255,255,0.07); --border2:rgba(255,255,255,0.14);
+  --text:#f0eeff; --text2:#9090bb; --radius:12px;
+  --won:#39ff14; --lost:#ff6eb4; --pipe:#c77dff;
+  --convert:#00f5ff; --neon-yellow:#ffe600; --neon-orange:#ff9500;
+  --a:#1a8fff; --b:#ff9500; --d:#9090bb; --landing:#39ff14;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Inter','Helvetica Neue',sans-serif;background:var(--bg);color:var(--text);font-size:14px;}
+body::before{content:'';position:fixed;inset:0;z-index:-1;background:radial-gradient(ellipse at 15% 15%,rgba(199,125,255,.10) 0%,transparent 55%),radial-gradient(ellipse at 85% 85%,rgba(0,245,255,.07) 0%,transparent 55%),radial-gradient(ellipse at 65% 5%,rgba(255,110,180,.06) 0%,transparent 45%);pointer-events:none;}
+#drop-zone{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;}
+#drop-zone.drag-over{background:#150a28;}
+.drop-box{border:2px dashed rgba(199,125,255,.4);border-radius:20px;padding:56px 80px;text-align:center;cursor:pointer;background:var(--surface);transition:all .2s;position:relative;overflow:hidden;}
+.drop-box::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 0%,rgba(199,125,255,.1) 0%,transparent 70%);pointer-events:none;}
+.drop-box:hover{border-color:var(--pipe);box-shadow:0 0 40px rgba(199,125,255,.2);}
+.drop-icon{font-size:56px;margin-bottom:16px;}
+.drop-title{font-size:20px;font-weight:700;margin-bottom:8px;}
+.drop-sub{font-size:13px;color:var(--text2);}
+#file-input{display:none;}
+#app{display:none;padding:28px;max-width:1380px;margin:0 auto;}
+.top-bar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;background:var(--surface);border-radius:var(--radius);padding:14px 20px;border:1px solid var(--border2);margin-bottom:24px;box-shadow:0 0 20px rgba(199,125,255,.06);}
+.top-bar-left{font-size:13px;color:var(--text2);}
+.top-bar-left strong{color:var(--text);font-size:15px;}
+.top-bar-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.member-filter{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.member-btn{border:1px solid var(--border2);border-radius:20px;padding:5px 14px;font-size:12px;cursor:pointer;background:var(--surface2);color:var(--text2);transition:all .15s;white-space:nowrap;}
+.member-btn:hover{border-color:var(--pipe);color:var(--pipe);}
+.member-btn.active{background:var(--pipe);color:#0d0d1a;border-color:var(--pipe);font-weight:700;box-shadow:0 0 12px rgba(199,125,255,.5);}
+.btn-reload{background:none;border:1px solid var(--border2);border-radius:8px;padding:5px 14px;cursor:pointer;font-size:12px;color:var(--text2);transition:all .15s;}
+.btn-reload:hover{border-color:var(--convert);color:var(--convert);}
+.tab-bar{display:flex;gap:4px;margin-bottom:24px;background:var(--surface);border-radius:var(--radius);padding:6px;border:1px solid var(--border);}
+.tab-btn{flex:1;text-align:center;padding:9px 16px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;color:var(--text2);transition:all .15s;}
+.tab-btn.active{background:var(--surface3);color:var(--text);box-shadow:inset 0 0 0 1px var(--border2);}
+.tab-btn:hover:not(.active){color:var(--text);}
+.tab-section{display:none;}
+.tab-section.active{display:block;}
+.section-title{font-size:11px;font-weight:700;color:var(--text2);letter-spacing:.1em;text-transform:uppercase;margin:0 0 14px;}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:14px;margin-bottom:28px;}
+.kpi-card{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);padding:18px 20px;position:relative;overflow:hidden;transition:box-shadow .2s;}
+.kpi-card:hover{box-shadow:0 0 24px rgba(199,125,255,.1);}
+.kpi-card::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;border-radius:var(--radius) var(--radius) 0 0;}
+.kpi-card.c-won::after{background:var(--won);box-shadow:0 0 8px var(--won);}
+.kpi-card.c-lost::after{background:var(--lost);box-shadow:0 0 8px var(--lost);}
+.kpi-card.c-pipe::after{background:var(--pipe);box-shadow:0 0 8px var(--pipe);}
+.kpi-card.c-convert::after{background:var(--convert);box-shadow:0 0 8px var(--convert);}
+.kpi-card.c-accent::after{background:var(--neon-yellow);box-shadow:0 0 8px var(--neon-yellow);}
+.kpi-card.c-orange::after{background:var(--neon-orange);box-shadow:0 0 8px var(--neon-orange);}
+.kpi-label{font-size:11px;color:var(--text2);margin-bottom:8px;letter-spacing:.04em;}
+.kpi-val{font-size:26px;font-weight:700;line-height:1;color:var(--text);}
+.kpi-val.neon-won{color:var(--won);text-shadow:0 0 12px rgba(57,255,20,.5);}
+.kpi-val.neon-lost{color:var(--lost);text-shadow:0 0 12px rgba(255,110,180,.5);}
+.kpi-val.neon-pipe{color:var(--pipe);text-shadow:0 0 12px rgba(199,125,255,.5);}
+.kpi-val.neon-convert{color:var(--convert);text-shadow:0 0 12px rgba(0,245,255,.5);}
+.kpi-val.neon-orange{color:var(--neon-orange);text-shadow:0 0 12px rgba(255,149,0,.5);}
+.kpi-sub{font-size:11px;color:var(--text2);margin-top:6px;}
+.charts-row{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;}
+.chart-card{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);padding:22px;margin-bottom:24px;}
+.chart-card.full{grid-column:1/-1;}
+.chart-wrap{position:relative;width:100%;}
+.legend{display:flex;gap:16px;margin-bottom:12px;flex-wrap:wrap;}
+.legend-item{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);}
+.legend-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+thead tr{border-bottom:1px solid var(--border2);}
+th{font-weight:700;color:var(--text2);text-align:left;padding:10px 12px;font-size:11px;letter-spacing:.05em;text-transform:uppercase;}
+td{padding:10px 12px;border-bottom:1px solid var(--border);color:var(--text);}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:var(--surface2);}
+.bar-bg{background:var(--surface3);border-radius:3px;height:6px;width:100%;overflow:hidden;min-width:80px;display:flex;}
+.bar-fill{height:6px;border-radius:3px;}
+.bar-seg{height:6px;}
+.badge{display:inline-block;padding:3px 9px;border-radius:6px;font-size:11px;font-weight:700;}
+.badge-won{background:rgba(57,255,20,.15);color:var(--won);border:1px solid rgba(57,255,20,.3);}
+.badge-mid{background:rgba(255,230,0,.15);color:var(--neon-yellow);border:1px solid rgba(255,230,0,.3);}
+.badge-lost{background:rgba(255,110,180,.15);color:var(--lost);border:1px solid rgba(255,110,180,.3);}
+.badge-convert{background:rgba(0,245,255,.15);color:var(--convert);border:1px solid rgba(0,245,255,.3);}
+.badge-orange{background:rgba(255,149,0,.15);color:var(--neon-orange);border:1px solid rgba(255,149,0,.3);}
+.kpi-yomi{font-size:11px;padding:2px 8px;border-radius:4px;font-weight:700;}
+.yomi-a{background:rgba(26,143,255,.2);color:#1a8fff;}
+.yomi-b{background:rgba(255,149,0,.2);color:var(--neon-orange);}
+.yomi-d{background:rgba(144,144,187,.2);color:var(--text2);}
+.yomi-none{background:rgba(255,255,255,.05);color:#555577;}
+.monthly-table-wrap{overflow-x:auto;margin-top:16px;}
+.monthly-table{font-size:12px;width:auto;min-width:100%;}
+.monthly-table th{white-space:nowrap;text-align:right;padding:7px 12px;}
+.monthly-table th:first-child{text-align:left;}
+.monthly-table td{text-align:right;padding:7px 12px;white-space:nowrap;}
+.monthly-table td:first-child{text-align:left;font-weight:600;}
+.notice{background:rgba(255,230,0,.08);border:1px solid rgba(255,230,0,.25);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--neon-yellow);margin-bottom:20px;}
+/* yomi section inside pipeline tab */
+.yomi-section{border-top:1px solid var(--border2);margin-top:28px;padding-top:24px;}
+.phase-toggle{display:flex;gap:8px;margin-bottom:16px;}
+.phase-tag{padding:4px 12px;border-radius:20px;font-size:12px;cursor:pointer;border:1px solid var(--border2);color:var(--text2);background:var(--surface2);transition:all .15s;}
+.phase-tag.active-won{background:rgba(57,255,20,.15);color:var(--won);border-color:var(--won);}
+.phase-tag.active-lost{background:rgba(255,110,180,.15);color:var(--lost);border-color:var(--lost);}
+.cross-wrap{overflow-x:auto;}
+.cross-table{font-size:12px;white-space:nowrap;}
+.cross-table th{padding:6px 10px;text-align:right;white-space:nowrap;}
+.cross-table th:first-child{text-align:left;}
+.cross-table td{padding:6px 10px;text-align:right;}
+.cross-table td:first-child{text-align:left;font-weight:600;}
+.detail-wrap{overflow-x:auto;}
+.detail-table{font-size:12px;white-space:nowrap;}
+.detail-table th,.detail-table td{padding:7px 10px;}
+.month-row-clickable{cursor:pointer;}
+.month-row-clickable:hover td{background:rgba(0,245,255,.05)!important;}
+.month-row-selected td{background:rgba(0,245,255,.07)!important;font-weight:700;}
+.month-filter-bar{display:flex;align-items:center;gap:8px;background:rgba(0,245,255,.07);border-radius:8px;padding:8px 14px;margin-bottom:16px;font-size:12px;color:var(--convert);}
+.btn-clear{background:rgba(255,110,180,.15);color:var(--lost);border:1px solid var(--lost);border-radius:6px;padding:3px 10px;cursor:pointer;font-size:11px;}
+@media(max-width:800px){.charts-row{grid-template-columns:1fr;}.tab-btn{font-size:11px;padding:7px 8px;}}
+</style>
+</head>
+<body>
+<div id="drop-zone">
+  <div class="drop-box" onclick="document.getElementById('file-input').click()">
+    <div class="drop-icon">📊</div>
+    <div class="drop-title">Salesforce XLS をドロップ</div>
+    <div class="drop-sub">またはクリックしてファイルを選択</div>
+    <div class="drop-sub" style="margin-top:8px;font-size:11px;color:#6060aa">初回面談日・トライアル開始日・ヨミ確度列含む商談レポートに対応</div>
+  </div>
+  <div id="error-msg" style="color:var(--lost);font-size:13px;display:none;"></div>
+</div>
+<input type="file" id="file-input" accept=".xls,.xlsx">
+<div id="app"></div>
+
+<script>
+const dropZone=document.getElementById('drop-zone');
+const fileInput=document.getElementById('file-input');
+const appDiv=document.getElementById('app');
+const errMsg=document.getElementById('error-msg');
+dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.add('drag-over');});
+dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop',e=>{e.preventDefault();dropZone.classList.remove('drag-over');handleFile(e.dataTransfer.files[0]);});
+fileInput.addEventListener('change',e=>{if(e.target.files[0])handleFile(e.target.files[0]);});
+
+let allRows=[],filename='';
+let selectedMembers=new Set(['ALL']),currentTab='win',currentYomiMonth=null;
+let charts={};
+
+const WON=['受注'],LOST=['失注'];
+const PIPELINE=['再提案','お試し開始待ち','事務手続き中','お試し打診中','お試し日調整中','結論回収中','お試し中','初回アポ待ち','お試し終了'];
+const PHASE_ORDER=['初回アポ待ち','お試し打診中','お試し日調整中','お試し開始待ち','お試し中','お試し終了','再提案','結論回収中','事務手続き中'];
+const YOMI_RATE={'Aヨミ':.8,'Bヨミ':.5,'Dヨミ':.2};
+const YOMI_LABELS=['Aヨミ','Bヨミ','Dヨミ'];
+const YOMI_BADGE={'Aヨミ':'yomi-a','Bヨミ':'yomi-b','Dヨミ':'yomi-d','未設定':'yomi-none'};
+
+function resolveYomi(raw){
+  const s=String(raw||'').trim();
+  if(s==='Aヨミ'||s==='80')return'Aヨミ';
+  if(s==='Bヨミ'||s==='50')return'Bヨミ';
+  if(s==='Dヨミ'||s==='20')return'Dヨミ';
+  return'未設定';
+}
+
+function handleFile(file){
+  filename=file.name;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const data=new Uint8Array(e.target.result);
+      let rows,headers;
+      if(file.name.endsWith('.xlsx')){
+        const wb=XLSX.read(data,{type:'array'});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const arr=XLSX.utils.sheet_to_json(ws,{header:1});
+        headers=arr[0];
+        rows=arr.slice(1).map(r=>{const o={};headers.forEach((h,i)=>o[h]=r[i]??'');return o;});
+      }else{
+        const text=new TextDecoder('shift-jis').decode(data);
+        const doc=new DOMParser().parseFromString(text,'text/html');
+        const trs=doc.querySelectorAll('table tr');
+        headers=[...trs[0].querySelectorAll('td,th')].map(td=>td.textContent.trim());
+        rows=[];
+        for(let i=1;i<trs.length;i++){
+          const cells=[...trs[i].querySelectorAll('td,th')].map(td=>td.textContent.trim());
+          if(cells.length===headers.length){const o={};headers.forEach((h,j)=>o[h]=cells[j]);rows.push(o);}
+        }
+      }
+      const today=new Date();today.setHours(0,0,0,0);
+      const thisMonth=new Date(today.getFullYear(),today.getMonth(),1);
+      allRows=rows.map(r=>{
+        const phase=(r['フェーズ']||'').trim();
+        const owner=(r['商談 所有者']||'').trim();
+        const closeDate=parseDate(r['完了予定日']);
+        const lostDate=parseDate(r['最終フェーズ変更日']);
+        const createdDate=parseDate(r['作成日']);
+        const firstMeetDate=parseDate(r['初回面談日']);
+        const trialDate=parseDate(r['トライアル開始日']);
+        const amt=parseFloat(r['金額'])||0;
+        const dealDays=parseFloat(r['商談日数'])||null;
+        const yomi=resolveYomi(r['ヨミ確度']);
+        const rate=YOMI_RATE[yomi]??null;
+        // 完了日：受注=完了予定日、失注=最終フェーズ変更日
+        const endDate=WON.includes(phase)?closeDate:lostDate;
+        // ステージ間日数（0以上のみ有効）
+        const dMeetToTrial=(firstMeetDate&&trialDate)?Math.max(0,daysDiff(trialDate,firstMeetDate)):null;
+        const dTrialToEnd=(trialDate&&endDate)?Math.max(0,daysDiff(endDate,trialDate)):null;
+        const monthKey=closeDate?mkKey(closeDate):null;
+        const createdKey=createdDate?mkKey(createdDate):null;
+        const isTarget=PIPELINE.includes(phase)&&closeDate&&closeDate>=thisMonth;
+        return{...r,_phase:phase,_owner:owner,_date:closeDate,_lostDate:lostDate,_createdDate:createdDate,_firstMeetDate:firstMeetDate,_trialDate:trialDate,_amount:amt,_dealDays:dealDays,_yomi:yomi,_rate:rate,_landing:rate!==null?amt*rate:0,_endDate:endDate,_dMeetToTrial:dMeetToTrial,_dTrialToEnd:dTrialToEnd,_monthKey:monthKey,_createdKey:createdKey,_isTarget:isTarget};
+      });
+      selectedMembers=new Set(['ALL']);currentTab='win';currentYomiMonth=null;
+      dropZone.style.display='none';appDiv.style.display='block';
+      renderAll();
+    }catch(err){errMsg.textContent='読み込みに失敗しました: '+err.message;errMsg.style.display='block';}
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function parseDate(v){if(!v||String(v).trim()==='')return null;const s=String(v).trim().replace(/\//g,'-');const d=new Date(s);return isNaN(d)?null:d;}
+function daysDiff(a,b){return Math.round((a-b)/(1000*60*60*24));}
+function mkKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+function mLabel(k){const[y,m]=k.split('-');return y+'/'+(+m)+'月';}
+function fmt(n){return Math.round(n).toLocaleString('ja-JP');}
+function fmtM(n){return n>=10000?(n/10000).toFixed(1)+'万':fmt(n);}
+function pct(a,b){return b>0?Math.round(a/b*100):0;}
+function avg(arr){const v=arr.filter(x=>x!=null&&!isNaN(x));return v.length?Math.round(v.reduce((s,x)=>s+x,0)/v.length):null;}
+function fmtAvg(v){return v!=null?v+'日':'—';}
+
+function isAllSelected(){return selectedMembers.has('ALL');}
+function getFiltered(){return isAllSelected()?allRows:allRows.filter(r=>selectedMembers.has(r._owner));}
+function destroyCharts(){Object.values(charts).forEach(c=>{try{c.destroy();}catch(e){}});charts={};}
+
+const GC='rgba(255,255,255,0.05)',TC='#9090bb';
+const CNEON={won:'rgba(57,255,20,.75)',lost:'rgba(255,110,180,.75)',rate:'#00f5ff',pipe:'#c77dff',convert:'#00f5ff',cv_rate:'#ffe600',a:'#1a8fff',b:'#ff9500',d:'#6a6a8a'};
+
+function renderAll(){
+  const members=[...new Set(allRows.map(r=>r._owner).filter(Boolean))].sort();
+  const rows=getFiltered();
+  const total=rows.length;
+  const wonRows=rows.filter(r=>WON.includes(r._phase));
+  const lostRows=rows.filter(r=>LOST.includes(r._phase));
+  const pipeRows=rows.filter(r=>PIPELINE.includes(r._phase));
+  const wonAmt=wonRows.reduce((s,r)=>s+r._amount,0);
+  const pipeAmt=pipeRows.reduce((s,r)=>s+r._amount,0);
+  const convertedRows=rows.filter(r=>r._firstMeetDate!==null);
+
+  // === 月次（受注/失注） ===
+  const monthlyMap={};
+  rows.forEach(r=>{
+    let k=null;
+    if(WON.includes(r._phase)&&r._date)k=mkKey(r._date);
+    else if(LOST.includes(r._phase)&&r._lostDate)k=mkKey(r._lostDate);
+    if(!k)return;
+    if(!monthlyMap[k])monthlyMap[k]={won:0,lost:0,allTotal:0};
+    monthlyMap[k].allTotal++;
+    if(WON.includes(r._phase))monthlyMap[k].won++;else monthlyMap[k].lost++;
+  });
+  const winMonths=Object.keys(monthlyMap).sort().filter(k=>monthlyMap[k].won+monthlyMap[k].lost>0);
+
+  // === 月次（商談化率） ===
+  const cvMonthlyMap={};
+  rows.forEach(r=>{if(!r._createdKey)return;if(!cvMonthlyMap[r._createdKey])cvMonthlyMap[r._createdKey]={total:0,notConverted:0};cvMonthlyMap[r._createdKey].total++;});
+  rows.forEach(r=>{if(LOST.includes(r._phase)&&!r._firstMeetDate&&r._lostDate){const lk=mkKey(r._lostDate);if(lk&&cvMonthlyMap[lk])cvMonthlyMap[lk].notConverted++;}});
+  const cvMonths=Object.keys(cvMonthlyMap).sort().filter(k=>cvMonthlyMap[k].total>0);
+
+  // === 担当者別月次（受注/失注） ===
+  const memberMonthlyMap={};
+  winMonths.forEach(k=>{memberMonthlyMap[k]={};members.forEach(m=>{memberMonthlyMap[k][m]={won:0,lost:0};});memberMonthlyMap[k]['全体']={won:0,lost:0};});
+  allRows.forEach(r=>{let k=null;if(WON.includes(r._phase)&&r._date)k=mkKey(r._date);else if(LOST.includes(r._phase)&&r._lostDate)k=mkKey(r._lostDate);if(!k||!memberMonthlyMap[k])return;const f=WON.includes(r._phase)?'won':'lost';if(memberMonthlyMap[k][r._owner])memberMonthlyMap[k][r._owner][f]++;memberMonthlyMap[k]['全体'][f]++;});
+
+  // === 担当者別月次（商談化率） ===
+  const memberCvMap={};
+  cvMonths.forEach(k=>{memberCvMap[k]={};members.forEach(m=>{memberCvMap[k][m]={total:0,notConverted:0};});memberCvMap[k]['全体']={total:0,notConverted:0};});
+  allRows.forEach(r=>{const ck=r._createdKey;if(ck&&memberCvMap[ck]){if(memberCvMap[ck][r._owner])memberCvMap[ck][r._owner].total++;memberCvMap[ck]['全体'].total++;}if(LOST.includes(r._phase)&&!r._firstMeetDate&&r._lostDate){const lk=mkKey(r._lostDate);if(lk&&memberCvMap[lk]){if(memberCvMap[lk][r._owner])memberCvMap[lk][r._owner].notConverted++;memberCvMap[lk]['全体'].notConverted++;}}});
+
+  // === 担当者別集計 + 商談日数 ===
+  const memberStats=members.map(m=>{
+    const mr=allRows.filter(r=>r._owner===m);
+    const mw=mr.filter(r=>WON.includes(r._phase)),ml=mr.filter(r=>LOST.includes(r._phase));
+    const mp=mr.filter(r=>PIPELINE.includes(r._phase));
+    const t=mr.length,w=mw.length,l=ml.length,p=mp.length;
+    const cv=mr.filter(r=>r._firstMeetDate).length;
+    const notCv=ml.filter(r=>!r._firstMeetDate).length;
+    return{m,t,w,l,p,wr:pct(w,t),lr:pct(l,t),wa:mw.reduce((s,r)=>s+r._amount,0),pa:mp.reduce((s,r)=>s+r._amount,0),cv,cvr:pct(cv,t),notCv,
+      // 商談日数
+      avgDays:avg(mr.map(r=>r._dealDays)),
+      avgDaysWon:avg(mw.map(r=>r._dealDays)),
+      avgDaysLost:avg(ml.map(r=>r._dealDays)),
+      // ステージ間日数（受注）
+      avgM2T_won:avg(mw.map(r=>r._dMeetToTrial)),
+      avgT2E_won:avg(mw.map(r=>r._dTrialToEnd)),
+      // ステージ間日数（失注）
+      avgM2T_lost:avg(ml.map(r=>r._dMeetToTrial)),
+      avgT2E_lost:avg(ml.map(r=>r._dTrialToEnd)),
+    };
+  }).sort((a,b)=>b.wa-a.wa);
+
+  // === フェーズ別パイプライン ===
+  const phaseCount={},phaseAmt={};
+  pipeRows.forEach(r=>{phaseCount[r._phase]=(phaseCount[r._phase]||0)+1;phaseAmt[r._phase]=(phaseAmt[r._phase]||0)+r._amount;});
+  const sortedPhases=PHASE_ORDER.filter(p=>phaseCount[p]).concat(Object.keys(phaseCount).filter(p=>!PHASE_ORDER.includes(p)));
+
+  // === ヨミ（sumasate_yomi.htmlと同一ロジック） ===
+  const today=new Date();today.setHours(0,0,0,0);
+  const thisMonthStart=new Date(today.getFullYear(),today.getMonth(),1);
+  // 担当者フィルターをグラフ・KPI含む全セクションに適用（yomi.htmlと同じ挙動）
+  const yomiBaseAll=allRows.filter(r=>r._isTarget);
+  const yomiBase=isAllSelected()?yomiBaseAll:yomiBaseAll.filter(r=>selectedMembers.has(r._owner));
+  // 月次集計（担当者フィルター適用済みベース）
+  const yomiMonthlyMap={};
+  yomiBase.forEach(r=>{if(!r._monthKey)return;const k=r._monthKey;if(!yomiMonthlyMap[k])yomiMonthlyMap[k]={landing:0,max:0,a:0,b:0,d:0,cnt:0};yomiMonthlyMap[k].cnt++;yomiMonthlyMap[k].max+=r._amount;yomiMonthlyMap[k].landing+=r._landing;if(r._yomi==='Aヨミ')yomiMonthlyMap[k].a+=r._landing;if(r._yomi==='Bヨミ')yomiMonthlyMap[k].b+=r._landing;if(r._yomi==='Dヨミ')yomiMonthlyMap[k].d+=r._landing;});
+  const yomiMonths=Object.keys(yomiMonthlyMap).sort();
+  // フィルター適用後データ（月絞り込みも適用）
+  const yomiFiltered=currentYomiMonth?yomiBase.filter(r=>r._monthKey===currentYomiMonth):yomiBase;
+  // KPI・サマリ
+  function calcYomiStat(rs){const s={total:0,maxAmt:0,landing:0,'cnt_未設定':0,'amt_未設定':0};YOMI_LABELS.forEach(y=>{s['cnt_'+y]=0;s['amt_'+y]=0;s['land_'+y]=0;});rs.forEach(r=>{s.total++;s.maxAmt+=r._amount;s.landing+=r._landing;const y=YOMI_LABELS.includes(r._yomi)?r._yomi:'未設定';s['cnt_'+y]++;s['amt_'+y]=(s['amt_'+y]||0)+r._amount;if(YOMI_LABELS.includes(y))s['land_'+y]=(s['land_'+y]||0)+r._landing;});return s;}
+  const yomiStat=calcYomiStat(yomiFiltered);
+  const noYomi=yomiFiltered.filter(r=>r._yomi==='未設定').length;
+  // 担当者別（全担当者ベース・月絞り込みのみ適用）
+  const yomiMembersAll=[...new Set(yomiBaseAll.map(r=>r._owner).filter(Boolean))].sort();
+  const yomiMemberStats=yomiMembersAll.map(m=>{const mr=(currentYomiMonth?yomiBaseAll.filter(r=>r._monthKey===currentYomiMonth):yomiBaseAll).filter(r=>r._owner===m);return{m,...calcYomiStat(mr)};}).filter(s=>s.total>0).sort((a,b)=>b.landing-a.landing);
+  // クロス表（全担当者・担当者フィルター適用なし）
+  const yomiCrossMap={};yomiMembersAll.forEach(m=>{yomiCrossMap[m]={};yomiMonths.forEach(k=>{yomiCrossMap[m][k]={landing:0,cnt:0};});});yomiBaseAll.forEach(r=>{if(!r._monthKey||!yomiCrossMap[r._owner])return;const c=yomiCrossMap[r._owner][r._monthKey];if(c){c.cnt++;c.landing+=r._landing;}});
+
+  // === 全体ステージ間日数 ===
+  const allWon=rows.filter(r=>WON.includes(r._phase));
+  const allLost=rows.filter(r=>LOST.includes(r._phase));
+  const globalAvgDays=avg(rows.map(r=>r._dealDays));
+  const globalAvgDaysWon=avg(allWon.map(r=>r._dealDays));
+  const globalAvgDaysLost=avg(allLost.map(r=>r._dealDays));
+  const globalM2T_won=avg(allWon.map(r=>r._dMeetToTrial));
+  const globalT2E_won=avg(allWon.map(r=>r._dTrialToEnd));
+  const globalM2T_lost=avg(allLost.map(r=>r._dMeetToTrial));
+  const globalT2E_lost=avg(allLost.map(r=>r._dTrialToEnd));
+
+  const displayMembers=isAllSelected()?['全体',...members]:[...members.filter(m=>selectedMembers.has(m))];
+  const selLabel=isAllSelected()?'':' （'+[...selectedMembers].join('・')+'）';
+  const periodStr=(allRows.find(r=>r['会計期間'])||{})['会計期間']||'';
+
+  destroyCharts();
+
+  appDiv.innerHTML=`
+<div class="top-bar">
+  <div class="top-bar-left"><strong>${periodStr||'商談データ'}</strong>&nbsp;·&nbsp;総商談数 ${total}件&nbsp;·&nbsp;${filename}</div>
+  <div class="top-bar-right">
+    <div class="member-filter" id="member-filter">
+      <span class="member-btn ${isAllSelected()?'active':''}" data-m="ALL">全体</span>
+      ${members.map(m=>`<span class="member-btn ${selectedMembers.has(m)&&!isAllSelected()?'active':''}" data-m="${m}">${m}</span>`).join('')}
+    </div>
+    <button class="btn-reload" onclick="location.reload()">↩ 別ファイル</button>
+  </div>
+</div>
+
+<div class="tab-bar" id="tab-bar">
+  <div class="tab-btn ${currentTab==='win'?'active':''}" data-tab="win">📈 受注・失注</div>
+  <div class="tab-btn ${currentTab==='convert'?'active':''}" data-tab="convert">🎯 商談化率</div>
+  <div class="tab-btn ${currentTab==='days'?'active':''}" data-tab="days">⏱ 商談日数</div>
+  <div class="tab-btn ${currentTab==='pipeline'?'active':''}" data-tab="pipeline">🔮 パイプライン＆ヨミ</div>
+</div>
+
+<!-- ===== TAB: 受注失注 ===== -->
+<div class="tab-section ${currentTab==='win'?'active':''}" id="tab-win">
+<p class="section-title">サマリ${selLabel}</p>
+<div class="kpi-grid">
+  <div class="kpi-card c-accent"><div class="kpi-label">総商談数</div><div class="kpi-val">${total}</div><div class="kpi-sub">受注+失注+進行中</div></div>
+  <div class="kpi-card c-won"><div class="kpi-label">受注件数 / 受注率</div><div class="kpi-val neon-won">${wonRows.length}<span style="font-size:16px"> 件</span></div><div class="kpi-sub">総商談比 ${pct(wonRows.length,total)}%</div></div>
+  <div class="kpi-card c-lost"><div class="kpi-label">失注件数 / 失注率</div><div class="kpi-val neon-lost">${lostRows.length}<span style="font-size:16px"> 件</span></div><div class="kpi-sub">総商談比 ${pct(lostRows.length,total)}%</div></div>
+  <div class="kpi-card c-won"><div class="kpi-label">受注金額合計</div><div class="kpi-val neon-won" style="font-size:20px">¥${fmt(wonAmt)}</div></div>
+  <div class="kpi-card c-pipe"><div class="kpi-label">パイプライン金額</div><div class="kpi-val neon-pipe" style="font-size:20px">¥${fmt(pipeAmt)}</div><div class="kpi-sub">進行中 ${pipeRows.length}件</div></div>
+</div>
+<div class="charts-row">
+  <div class="chart-card">
+    <p class="section-title">月次 受注・失注推移</p>
+    <div class="legend">
+      <span class="legend-item"><span class="legend-dot" style="background:${CNEON.won}"></span>受注</span>
+      <span class="legend-item"><span class="legend-dot" style="background:${CNEON.lost}"></span>失注</span>
+      <span class="legend-item"><span style="display:inline-block;width:18px;height:2px;background:${CNEON.rate};vertical-align:middle"></span>受注率</span>
+    </div>
+    <div class="chart-wrap" style="height:280px"><canvas id="chartMonthly"></canvas></div>
+  </div>
+  <div class="chart-card"><p class="section-title">担当者別 受注率</p><div class="chart-wrap" style="height:280px"><canvas id="chartMemberWin"></canvas></div></div>
+</div>
+<div class="chart-card full" style="margin-bottom:24px">
+  <p class="section-title">月次 受注・失注件数 詳細</p>
+  <div class="monthly-table-wrap"><table class="monthly-table">
+    <thead>
+      <tr><th>担当者</th>${winMonths.map(k=>`<th colspan="3" style="text-align:center;border-left:1px solid var(--border2)">${mLabel(k)}</th>`).join('')}</tr>
+      <tr><th></th>${winMonths.map(()=>`<th style="color:${CNEON.won};border-left:1px solid var(--border2)">受注</th><th style="color:${CNEON.lost}">失注</th><th style="color:${CNEON.rate}">受注率</th>`).join('')}</tr>
+    </thead>
+    <tbody>
+      ${displayMembers.map(m=>{const isT=m==='全体';return`<tr style="${isT?'border-top:2px solid var(--border2);font-weight:600':''}"><td>${m}</td>${winMonths.map(k=>{const d=isT?memberMonthlyMap[k]['全体']:(memberMonthlyMap[k][m]||{won:0,lost:0});const cl=(d.won||0)+(d.lost||0);const wr=cl>0?Math.round((d.won||0)/cl*100):null;return`<td style="border-left:1px solid var(--border2);color:${CNEON.won};font-weight:600">${d.won||0}</td><td style="color:${CNEON.lost}">${d.lost||0}</td><td style="color:${CNEON.rate};font-size:11px">${wr!==null?wr+'%':'—'}</td>`;}).join('')}</tr>`;}).join('')}
+    </tbody>
+  </table></div>
+</div>
+<div class="chart-card full" style="margin-bottom:24px">
+  <p class="section-title">担当者別実績（総商談数ベース）</p>
+  <table><thead><tr>
+    <th>担当者</th><th style="text-align:right">総商談</th><th style="text-align:right">受注</th><th style="text-align:right">受注率</th><th style="min-width:80px"></th>
+    <th style="text-align:right">失注</th><th style="text-align:right">失注率</th><th style="text-align:right">進行中</th><th style="text-align:right">受注金額</th><th style="text-align:right">パイプ金額</th>
+  </tr></thead><tbody>
+    ${memberStats.map(s=>`<tr>
+      <td><strong>${s.m}</strong></td>
+      <td style="text-align:right;color:var(--text2)">${s.t}</td>
+      <td style="text-align:right;color:var(--won);font-weight:600">${s.w}</td>
+      <td style="text-align:right"><span class="badge ${s.wr>=20?'badge-won':s.wr>=10?'badge-mid':'badge-lost'}">${s.wr}%</span></td>
+      <td><div class="bar-bg"><div class="bar-fill" style="width:${Math.min(s.wr*3,100)}%;background:var(--won);box-shadow:0 0 6px var(--won)"></div></div></td>
+      <td style="text-align:right;color:var(--lost)">${s.l}</td>
+      <td style="text-align:right;color:var(--text2)">${s.lr}%</td>
+      <td style="text-align:right;color:var(--text2)">${s.p}</td>
+      <td style="text-align:right;font-weight:600;color:var(--won)">¥${fmt(s.wa)}</td>
+      <td style="text-align:right;color:var(--text2)">¥${fmt(s.pa)}</td>
+    </tr>`).join('')}
+  </tbody></table>
+</div>
+</div>
+
+<!-- ===== TAB: 商談化率 ===== -->
+<div class="tab-section ${currentTab==='convert'?'active':''}" id="tab-convert">
+<p class="section-title">商談化率サマリ${selLabel}</p>
+<div class="kpi-grid">
+  <div class="kpi-card c-accent"><div class="kpi-label">総商談数（リード数）</div><div class="kpi-val">${total}</div></div>
+  <div class="kpi-card c-convert"><div class="kpi-label">商談化数（初回面談日あり）</div><div class="kpi-val neon-convert">${convertedRows.length}<span style="font-size:16px"> 件</span></div><div class="kpi-sub">商談化率 ${pct(convertedRows.length,total)}%</div></div>
+  <div class="kpi-card c-lost"><div class="kpi-label">未商談化（初回面談なし失注）</div><div class="kpi-val neon-lost">${rows.filter(r=>LOST.includes(r._phase)&&!r._firstMeetDate).length}<span style="font-size:16px"> 件</span></div><div class="kpi-sub">未商談化率 ${pct(rows.filter(r=>LOST.includes(r._phase)&&!r._firstMeetDate).length,total)}%</div></div>
+  <div class="kpi-card c-pipe"><div class="kpi-label">進行中（面談日あり）</div><div class="kpi-val neon-pipe">${rows.filter(r=>PIPELINE.includes(r._phase)&&r._firstMeetDate).length}<span style="font-size:16px"> 件</span></div></div>
+</div>
+<div class="charts-row">
+  <div class="chart-card">
+    <p class="section-title">月別 商談化率推移</p>
+    <p style="font-size:11px;color:var(--text2);margin-bottom:10px">分母：作成日がその月の商談数 ／ 商談化率 = 1 −（未商談化失注 ÷ 作成数）</p>
+    <div class="chart-wrap" style="height:260px"><canvas id="chartCvMonthly"></canvas></div>
+  </div>
+  <div class="chart-card"><p class="section-title">担当者別 商談化率</p><div class="chart-wrap" style="height:260px"><canvas id="chartCvMember"></canvas></div></div>
+</div>
+<div class="chart-card full" style="margin-bottom:24px">
+  <p class="section-title">月次 商談化率 詳細</p>
+  <div class="monthly-table-wrap"><table class="monthly-table">
+    <thead>
+      <tr><th>担当者</th>${cvMonths.map(k=>`<th colspan="3" style="text-align:center;border-left:1px solid var(--border2)">${mLabel(k)}</th>`).join('')}</tr>
+      <tr><th></th>${cvMonths.map(()=>`<th style="color:var(--text2);border-left:1px solid var(--border2)">作成数</th><th style="color:${CNEON.lost}">未商談化</th><th style="color:${CNEON.cv_rate}">商談化率</th>`).join('')}</tr>
+    </thead>
+    <tbody>
+      ${displayMembers.map(m=>{const isT=m==='全体';return`<tr style="${isT?'border-top:2px solid var(--border2);font-weight:600':''}"><td>${m}</td>${cvMonths.map(k=>{const d=isT?memberCvMap[k]['全体']:(memberCvMap[k][m]||{total:0,notConverted:0});const cvr=d.total>0?Math.round((1-d.notConverted/d.total)*100):null;return`<td style="border-left:1px solid var(--border2);color:var(--text2)">${d.total||0}</td><td style="color:${CNEON.lost}">${d.notConverted||0}</td><td style="color:${CNEON.cv_rate};font-weight:600">${cvr!==null?cvr+'%':'—'}</td>`;}).join('')}</tr>`;}).join('')}
+    </tbody>
+  </table></div>
+</div>
+<div class="chart-card full" style="margin-bottom:24px">
+  <p class="section-title">担当者別 商談化率（全期間）</p>
+  <table><thead><tr>
+    <th>担当者</th><th style="text-align:right">総商談</th><th style="text-align:right">商談化数</th><th style="text-align:right">商談化率</th><th style="min-width:80px"></th>
+    <th style="text-align:right">未商談化失注</th><th style="text-align:right">未商談化率</th>
+  </tr></thead><tbody>
+    ${memberStats.map(s=>`<tr>
+      <td><strong>${s.m}</strong></td>
+      <td style="text-align:right;color:var(--text2)">${s.t}</td>
+      <td style="text-align:right;color:var(--convert);font-weight:600">${s.cv}</td>
+      <td style="text-align:right"><span class="badge badge-convert">${s.cvr}%</span></td>
+      <td><div class="bar-bg"><div class="bar-fill" style="width:${s.cvr}%;background:var(--convert);box-shadow:0 0 6px var(--convert)"></div></div></td>
+      <td style="text-align:right;color:var(--lost)">${s.notCv}</td>
+      <td style="text-align:right;color:var(--text2)">${pct(s.notCv,s.t)}%</td>
+    </tr>`).join('')}
+  </tbody></table>
+</div>
+</div>
+
+<!-- ===== TAB: 商談日数 ===== -->
+<div class="tab-section ${currentTab==='days'?'active':''}" id="tab-days">
+<p class="section-title">商談日数サマリ${selLabel}</p>
+<div class="kpi-grid">
+  <div class="kpi-card c-accent"><div class="kpi-label">平均商談日数（全体）</div><div class="kpi-val neon-orange">${fmtAvg(globalAvgDays)}</div></div>
+  <div class="kpi-card c-won"><div class="kpi-label">平均商談日数（受注）</div><div class="kpi-val neon-won">${fmtAvg(globalAvgDaysWon)}</div></div>
+  <div class="kpi-card c-lost"><div class="kpi-label">平均商談日数（失注）</div><div class="kpi-val neon-lost">${fmtAvg(globalAvgDaysLost)}</div></div>
+</div>
+
+<div class="charts-row">
+  <div class="chart-card">
+    <p class="section-title">受注 ステージ間平均日数（全体）</p>
+    <div class="chart-wrap" style="height:200px"><canvas id="chartStageWon"></canvas></div>
+    <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div style="background:var(--surface2);border-radius:8px;padding:12px;border:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:4px">面談 → トライアル</div>
+        <div style="font-size:22px;font-weight:700;color:var(--convert)">${fmtAvg(globalM2T_won)}</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:8px;padding:12px;border:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:4px">トライアル → 完了</div>
+        <div style="font-size:22px;font-weight:700;color:var(--won)">${fmtAvg(globalT2E_won)}</div>
+      </div>
+    </div>
+  </div>
+  <div class="chart-card">
+    <p class="section-title">失注 ステージ間平均日数（全体）</p>
+    <div class="chart-wrap" style="height:200px"><canvas id="chartStageLost"></canvas></div>
+    <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div style="background:var(--surface2);border-radius:8px;padding:12px;border:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:4px">面談 → トライアル</div>
+        <div style="font-size:22px;font-weight:700;color:var(--convert)">${fmtAvg(globalM2T_lost)}</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:8px;padding:12px;border:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:4px">トライアル → 完了</div>
+        <div style="font-size:22px;font-weight:700;color:var(--lost)">${fmtAvg(globalT2E_lost)}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="chart-card full" style="margin-bottom:24px">
+  <p class="section-title">担当者別 商談日数 詳細</p>
+  <table><thead><tr>
+    <th>担当者</th>
+    <th style="text-align:right">平均日数<br><span style="font-size:10px;font-weight:400">全体</span></th>
+    <th style="text-align:right">平均日数<br><span style="font-size:10px;color:var(--won)">受注</span></th>
+    <th style="text-align:right">平均日数<br><span style="font-size:10px;color:var(--lost)">失注</span></th>
+    <th style="border-left:1px solid var(--border2);text-align:right">面談→試験<br><span style="font-size:10px;color:var(--convert)">受注</span></th>
+    <th style="text-align:right">試験→完了<br><span style="font-size:10px;color:var(--won)">受注</span></th>
+    <th style="border-left:1px solid var(--border2);text-align:right">面談→試験<br><span style="font-size:10px;color:var(--convert)">失注</span></th>
+    <th style="text-align:right">試験→完了<br><span style="font-size:10px;color:var(--lost)">失注</span></th>
+  </tr></thead><tbody>
+    ${memberStats.map(s=>`<tr>
+      <td><strong>${s.m}</strong></td>
+      <td style="text-align:right;color:var(--neon-orange);font-weight:600">${fmtAvg(s.avgDays)}</td>
+      <td style="text-align:right;color:var(--won)">${fmtAvg(s.avgDaysWon)}</td>
+      <td style="text-align:right;color:var(--lost)">${fmtAvg(s.avgDaysLost)}</td>
+      <td style="border-left:1px solid var(--border2);text-align:right;color:var(--convert)">${fmtAvg(s.avgM2T_won)}</td>
+      <td style="text-align:right;color:var(--won)">${fmtAvg(s.avgT2E_won)}</td>
+      <td style="border-left:1px solid var(--border2);text-align:right;color:var(--convert)">${fmtAvg(s.avgM2T_lost)}</td>
+      <td style="text-align:right;color:var(--lost)">${fmtAvg(s.avgT2E_lost)}</td>
+    </tr>`).join('')}
+  </tbody></table>
+  <p style="font-size:11px;color:var(--text2);margin-top:12px">※ 試験＝トライアル。日付未入力の商談は除外して平均を算出しています。</p>
+</div>
+<div class="chart-card full" style="margin-bottom:24px">
+  <p class="section-title">担当者別 平均商談日数（受注 vs 失注）</p>
+  <div class="chart-wrap" style="height:260px"><canvas id="chartDaysMember"></canvas></div>
+</div>
+</div>
+
+<!-- ===== TAB: パイプライン＆ヨミ ===== -->
+<div class="tab-section ${currentTab==='pipeline'?'active':''}" id="tab-pipeline">
+<p class="section-title">フェーズ別パイプライン${selLabel}</p>
+<div class="charts-row">
+  <div class="chart-card" style="margin-bottom:0">
+    <div class="chart-wrap" style="height:${Math.max(220,sortedPhases.length*40+60)}px"><canvas id="chartPhase"></canvas></div>
+  </div>
+  <div class="chart-card" style="margin-bottom:0">
+    <table style="font-size:12px">
+      <thead><tr><th>フェーズ</th><th style="text-align:right">件数</th><th style="text-align:right">合計金額</th></tr></thead>
+      <tbody>
+        ${sortedPhases.map(p=>`<tr><td>${p}</td><td style="text-align:right;color:var(--pipe);font-weight:600">${phaseCount[p]||0}</td><td style="text-align:right">¥${fmt(phaseAmt[p]||0)}</td></tr>`).join('')}
+        <tr style="border-top:2px solid var(--border2);font-weight:600"><td>合計</td><td style="text-align:right;color:var(--pipe)">${sortedPhases.reduce((s,p)=>s+(phaseCount[p]||0),0)}</td><td style="text-align:right">¥${fmt(sortedPhases.reduce((s,p)=>s+(phaseAmt[p]||0),0))}</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ヨミ確認セクション（sumasate_yomi.htmlと同一） -->
+<div class="yomi-section">
+<p class="section-title">🎯 進行中商談 ヨミ確認（今月以降）</p>
+${currentYomiMonth?`<div class="month-filter-bar">📅 <strong>${mLabel(currentYomiMonth)}</strong> に絞り込み中 &nbsp;<button class="btn-clear" id="btn-clear-yomi">✕ 解除</button></div>`:''}
+${noYomi>0?`<div class="notice">⚠️ ヨミ確度が未設定（0など）の商談が ${noYomi}件 あります。着地読みの計算から除外されています。</div>`:''}
+
+<p class="section-title" style="margin-top:4px">サマリ${selLabel}${currentYomiMonth?'・'+mLabel(currentYomiMonth):''}</p>
+<div class="kpi-grid">
+  <div class="kpi-card c-accent">
+    <div class="kpi-label">対象商談数</div>
+    <div class="kpi-val">${yomiStat.total}<span style="font-size:14px;font-weight:400"> 件</span></div>
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+      ${YOMI_LABELS.map(y=>`<span class="kpi-yomi ${YOMI_BADGE[y]}">${y} ${yomiStat['cnt_'+y]}件</span>`).join('')}
+      ${yomiStat['cnt_未設定']>0?`<span class="kpi-yomi yomi-none">未設定 ${yomiStat['cnt_未設定']}件</span>`:''}
+    </div>
+  </div>
+  <div class="kpi-card c-won">
+    <div class="kpi-label">着地読み（ヨミ係数適用後）</div>
+    <div class="kpi-val neon-won" style="font-size:22px">¥${fmt(yomiStat.landing)}</div>
+    <div class="kpi-sub">A×80% + B×50% + D×20%</div>
+  </div>
+  <div class="kpi-card c-accent">
+    <div class="kpi-label">最大値（全額合算）</div>
+    <div class="kpi-val" style="font-size:22px">¥${fmt(yomiStat.maxAmt)}</div>
+    <div class="kpi-sub">ヨミ係数なし・全件合算</div>
+  </div>
+  <div class="kpi-card c-pipe">
+    <div class="kpi-label">着地読み内訳</div>
+    <div style="margin-top:6px">
+      ${YOMI_LABELS.map(y=>`<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:12px"><span class="kpi-yomi ${YOMI_BADGE[y]}">${y}</span><span style="font-weight:600">¥${fmt(yomiStat['land_'+y]||0)}</span></div>`).join('')}
+    </div>
+  </div>
+</div>
+
+<div class="charts-row">
+  <div class="chart-card" style="margin-bottom:0">
+    <p class="section-title">月別 着地読み・最大値</p>
+    <div class="legend">
+      <span class="legend-item"><span class="legend-dot" style="background:${CNEON.a}"></span>Aヨミ着地</span>
+      <span class="legend-item"><span class="legend-dot" style="background:${CNEON.b}"></span>Bヨミ着地</span>
+      <span class="legend-item"><span class="legend-dot" style="background:${CNEON.d}"></span>Dヨミ着地</span>
+      <span class="legend-item"><span style="display:inline-block;width:18px;height:2px;background:#aaa;vertical-align:middle"></span>最大値</span>
+    </div>
+    <p style="font-size:11px;color:var(--text2);margin-bottom:6px">💡 棒グラフをクリックするとその月に絞り込めます</p>
+    <div class="chart-wrap" style="height:240px"><canvas id="chartYomiBar"></canvas></div>
+  </div>
+  <div class="chart-card" style="margin-bottom:0">
+    <p class="section-title">ヨミ別 着地読み構成</p>
+    <div class="chart-wrap" style="height:280px"><canvas id="chartYomiPie"></canvas></div>
+  </div>
+</div>
+
+<div class="chart-card" style="margin-bottom:24px">
+  <p class="section-title">月別 数値テーブル</p>
+  <div style="overflow-x:auto"><table class="monthly-table">
+    <thead><tr>
+      <th>月</th><th style="text-align:right">件数</th>
+      <th style="text-align:right;color:${CNEON.a}">Aヨミ着地</th>
+      <th style="text-align:right;color:${CNEON.b}">Bヨミ着地</th>
+      <th style="text-align:right;color:${CNEON.d}">Dヨミ着地</th>
+      <th style="text-align:right;color:var(--won)">着地計</th>
+      <th style="text-align:right">最大値</th>
+    </tr></thead>
+    <tbody>
+      ${yomiMonths.map(k=>{const d=yomiMonthlyMap[k];const isSel=k===currentYomiMonth;return`<tr class="month-row-clickable${isSel?' month-row-selected':''}" data-yomimonth="${k}">
+        <td><strong>${mLabel(k)}</strong>${isSel?' ✓':''}</td>
+        <td style="text-align:right;color:var(--text2)">${d.cnt}</td>
+        <td style="text-align:right;color:${CNEON.a};font-weight:600">¥${fmt(d.a)}</td>
+        <td style="text-align:right;color:${CNEON.b};font-weight:600">¥${fmt(d.b)}</td>
+        <td style="text-align:right;color:${CNEON.d}">¥${fmt(d.d)}</td>
+        <td style="text-align:right;color:var(--won);font-weight:700">¥${fmt(d.landing)}</td>
+        <td style="text-align:right;color:var(--text2)">¥${fmt(d.max)}</td>
+      </tr>`;}).join('')}
+      <tr style="border-top:2px solid var(--border2);font-weight:700;background:var(--surface2)">
+        <td>合計</td>
+        <td style="text-align:right">${yomiMonths.reduce((s,k)=>s+yomiMonthlyMap[k].cnt,0)}</td>
+        <td style="text-align:right;color:${CNEON.a}">¥${fmt(yomiMonths.reduce((s,k)=>s+yomiMonthlyMap[k].a,0))}</td>
+        <td style="text-align:right;color:${CNEON.b}">¥${fmt(yomiMonths.reduce((s,k)=>s+yomiMonthlyMap[k].b,0))}</td>
+        <td style="text-align:right;color:${CNEON.d}">¥${fmt(yomiMonths.reduce((s,k)=>s+yomiMonthlyMap[k].d,0))}</td>
+        <td style="text-align:right;color:var(--won)">¥${fmt(yomiMonths.reduce((s,k)=>s+yomiMonthlyMap[k].landing,0))}</td>
+        <td style="text-align:right">¥${fmt(yomiMonths.reduce((s,k)=>s+yomiMonthlyMap[k].max,0))}</td>
+      </tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div class="chart-card" style="margin-bottom:24px">
+  <p class="section-title">担当者別×月別 クロス表（着地読み）</p>
+  <div class="cross-wrap"><table class="cross-table">
+    <thead><tr>
+      <th>担当者</th>
+      ${yomiMonths.map(k=>`<th style="text-align:right${k===currentYomiMonth?';background:rgba(0,245,255,.07)':''}">${mLabel(k)}</th>`).join('')}
+      <th style="text-align:right;border-left:2px solid var(--border2)">合計</th>
+    </tr></thead>
+    <tbody>
+      ${yomiMembersAll.filter(m=>yomiMonths.some(k=>yomiCrossMap[m]?.[k]?.cnt>0)).map(m=>{
+        const rowTotal=yomiMonths.reduce((s,k)=>s+(yomiCrossMap[m]?.[k]?.landing||0),0);
+        return`<tr><td>${m}</td>${yomiMonths.map(k=>{const land=yomiCrossMap[m]?.[k]?.landing||0;return`<td style="text-align:right${k===currentYomiMonth?';background:rgba(0,245,255,.07)':''};color:${land>0?'var(--won)':'var(--text2)'};font-weight:${land>0?'600':'400'}">${land>0?'¥'+fmtM(land):'—'}</td>`;}).join('')}<td style="text-align:right;border-left:2px solid var(--border2);font-weight:700;color:var(--won)">¥${fmtM(rowTotal)}</td></tr>`;
+      }).join('')}
+      <tr style="border-top:2px solid var(--border2);font-weight:700;background:var(--surface2)">
+        <td>合計</td>
+        ${yomiMonths.map(k=>`<td style="text-align:right${k===currentYomiMonth?';background:rgba(0,245,255,.12)':''};color:var(--won)">¥${fmtM(yomiMonthlyMap[k].landing)}</td>`).join('')}
+        <td style="text-align:right;border-left:2px solid var(--border2);color:var(--won)">¥${fmtM(yomiMonths.reduce((s,k)=>s+yomiMonthlyMap[k].landing,0))}</td>
+      </tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div class="chart-card" style="margin-bottom:24px">
+  <p class="section-title">担当者別 着地読み・最大値${currentYomiMonth?'（'+mLabel(currentYomiMonth)+'）':''}</p>
+  <table><thead><tr>
+    <th>担当者</th><th style="text-align:right">件数</th><th style="text-align:right">着地読み</th><th style="min-width:100px"></th>
+    <th style="text-align:right">最大値</th><th style="text-align:right">Aヨミ</th><th style="text-align:right">Bヨミ</th><th style="text-align:right">Dヨミ</th><th style="text-align:right">未設定</th>
+  </tr></thead><tbody>
+    ${yomiMemberStats.map(s=>{const maxL=Math.max(...yomiMemberStats.map(x=>x.landing),1);return`<tr>
+      <td><strong>${s.m}</strong></td>
+      <td style="text-align:right;color:var(--text2)">${s.total}</td>
+      <td style="text-align:right;font-weight:700;color:var(--won)">¥${fmt(s.landing)}</td>
+      <td><div class="bar-bg">
+        <div class="bar-seg" style="width:${Math.round(s['land_Aヨミ']/maxL*100)}%;background:${CNEON.a}"></div>
+        <div class="bar-seg" style="width:${Math.round(s['land_Bヨミ']/maxL*100)}%;background:${CNEON.b}"></div>
+        <div class="bar-seg" style="width:${Math.round(s['land_Dヨミ']/maxL*100)}%;background:${CNEON.d}"></div>
+      </div></td>
+      <td style="text-align:right;color:var(--text2)">¥${fmt(s.maxAmt)}</td>
+      <td style="text-align:right;color:${CNEON.a};font-size:12px">${s['cnt_Aヨミ']}件</td>
+      <td style="text-align:right;color:${CNEON.b};font-size:12px">${s['cnt_Bヨミ']}件</td>
+      <td style="text-align:right;color:${CNEON.d};font-size:12px">${s['cnt_Dヨミ']}件</td>
+      <td style="text-align:right;color:#555577;font-size:12px">${s['cnt_未設定']}件</td>
+    </tr>`;}).join('')}
+    ${yomiMemberStats.length>0?`<tr style="border-top:2px solid var(--border2);font-weight:700;background:var(--surface2)">
+      <td>合計</td><td style="text-align:right">${yomiMemberStats.reduce((s,x)=>s+x.total,0)}</td>
+      <td style="text-align:right;color:var(--won)">¥${fmt(yomiMemberStats.reduce((s,x)=>s+x.landing,0))}</td>
+      <td></td><td style="text-align:right">¥${fmt(yomiMemberStats.reduce((s,x)=>s+x.maxAmt,0))}</td>
+      <td style="text-align:right;color:${CNEON.a};font-size:12px">${yomiMemberStats.reduce((s,x)=>s+x['cnt_Aヨミ'],0)}件</td>
+      <td style="text-align:right;color:${CNEON.b};font-size:12px">${yomiMemberStats.reduce((s,x)=>s+x['cnt_Bヨミ'],0)}件</td>
+      <td style="text-align:right;color:${CNEON.d};font-size:12px">${yomiMemberStats.reduce((s,x)=>s+x['cnt_Dヨミ'],0)}件</td>
+      <td style="text-align:right;color:#555577;font-size:12px">${yomiMemberStats.reduce((s,x)=>s+x['cnt_未設定'],0)}件</td>
+    </tr>`:''}
+  </tbody></table>
+</div>
+
+<div class="chart-card" style="margin-bottom:24px">
+  <p class="section-title">商談明細${selLabel}${currentYomiMonth?'・'+mLabel(currentYomiMonth):''}</p>
+  <div class="detail-wrap"><table class="detail-table">
+    <thead><tr>
+      <th>担当者</th><th>取引先名</th><th>フェーズ</th><th>ヨミ確度</th>
+      <th style="text-align:right">金額（最大）</th>
+      <th style="text-align:right">着地読み</th>
+      <th style="text-align:right">完了予定日</th>
+    </tr></thead>
+    <tbody>
+      ${[...yomiFiltered].sort((a,b)=>{const mk=a._monthKey&&b._monthKey?a._monthKey.localeCompare(b._monthKey):0;return mk||b._landing-a._landing;}).map(r=>`
+      <tr>
+        <td>${r._owner}</td>
+        <td>${r['取引先名']||''}</td>
+        <td style="font-size:11px;color:var(--text2)">${r._phase}</td>
+        <td><span class="badge ${YOMI_BADGE[r._yomi]||'yomi-none'}">${r._yomi}</span></td>
+        <td style="text-align:right">¥${fmt(r._amount)}</td>
+        <td style="text-align:right;font-weight:600;color:var(--won)">${r._rate!==null?'¥'+fmt(r._landing):'—'}</td>
+        <td style="text-align:right;color:var(--text2);font-size:12px">${r._date?r._date.getFullYear()+'/'+(r._date.getMonth()+1)+'/'+r._date.getDate():'—'}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table></div>
+</div>
+</div><!-- end yomi-section -->
+</div><!-- end tab-pipeline -->
+`;
+
+  // === イベント ===
+  document.getElementById('member-filter').addEventListener('click',e=>{
+    const btn=e.target.closest('.member-btn');if(!btn)return;
+    const m=btn.dataset.m;
+    if(m==='ALL'){
+      // 全体クリック → 全選択解除して全体に戻す
+      selectedMembers=new Set(['ALL']);
+    } else {
+      // 個人クリック → 全体を外して個人をトグル
+      selectedMembers.delete('ALL');
+      if(selectedMembers.has(m)) selectedMembers.delete(m);
+      else selectedMembers.add(m);
+      // 誰も選ばれていなければ全体に戻す
+      if(selectedMembers.size===0) selectedMembers=new Set(['ALL']);
+    }
+    currentYomiMonth=null;renderAll();
+  });
+  document.getElementById('tab-bar').addEventListener('click',e=>{
+    const btn=e.target.closest('.tab-btn');if(!btn)return;
+    currentTab=btn.dataset.tab;renderAll();
+  });
+  const clearYomi=document.getElementById('btn-clear-yomi');
+  if(clearYomi)clearYomi.addEventListener('click',()=>{currentYomiMonth=null;renderAll();});
+  document.querySelectorAll('.month-row-clickable').forEach(tr=>{
+    tr.addEventListener('click',()=>{const k=tr.dataset.yomimonth;currentYomiMonth=currentYomiMonth===k?null:k;renderAll();});
+  });
+
+  // === グラフ ===
+  if(currentTab==='win'){
+    charts.monthly=new Chart(document.getElementById('chartMonthly'),{type:'bar',data:{labels:winMonths.map(mLabel),datasets:[
+      {type:'bar',label:'受注',data:winMonths.map(k=>monthlyMap[k]?.won||0),backgroundColor:CNEON.won,yAxisID:'y'},
+      {type:'bar',label:'失注',data:winMonths.map(k=>monthlyMap[k]?.lost||0),backgroundColor:CNEON.lost,yAxisID:'y'},
+      {type:'line',label:'受注率',yAxisID:'y2',data:winMonths.map(k=>{const d=monthlyMap[k];return d&&d.allTotal>0?Math.round(d.won/d.allTotal*100):0;}),borderColor:CNEON.rate,backgroundColor:'rgba(0,245,255,.04)',borderWidth:2,pointRadius:4,pointBackgroundColor:CNEON.rate,tension:.3,fill:false,order:0}
+    ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.dataset.label==='受注率'?` 受注率: ${ctx.parsed.y}%`:` ${ctx.dataset.label}: ${ctx.parsed.y}件`}}},scales:{x:{ticks:{color:TC,maxRotation:45,minRotation:45,font:{size:11}},grid:{color:GC}},y:{beginAtZero:true,ticks:{color:TC,font:{size:11}},grid:{color:GC}},y2:{position:'right',beginAtZero:true,max:100,ticks:{color:CNEON.rate,font:{size:11},callback:v=>v+'%'},grid:{drawOnChartArea:false}}}}});
+    charts.memberWin=new Chart(document.getElementById('chartMemberWin'),{type:'bar',data:{labels:memberStats.map(s=>s.m),datasets:[{label:'受注率(%)',data:memberStats.map(s=>s.wr),backgroundColor:memberStats.map(s=>s.wr>=20?CNEON.won:s.wr>=10?'rgba(255,230,0,.7)':CNEON.lost)}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>` 受注率: ${ctx.parsed.y}%`}}},scales:{x:{ticks:{color:TC,font:{size:11}},grid:{color:GC}},y:{beginAtZero:true,max:100,ticks:{color:TC,font:{size:11},callback:v=>v+'%'},grid:{color:GC}}}}});
+  }
+  if(currentTab==='convert'){
+    charts.cvMonthly=new Chart(document.getElementById('chartCvMonthly'),{type:'bar',data:{labels:cvMonths.map(mLabel),datasets:[
+      {type:'bar',label:'作成数',data:cvMonths.map(k=>cvMonthlyMap[k]?.total||0),backgroundColor:'rgba(199,125,255,.35)',yAxisID:'y'},
+      {type:'bar',label:'未商談化',data:cvMonths.map(k=>cvMonthlyMap[k]?.notConverted||0),backgroundColor:CNEON.lost,yAxisID:'y'},
+      {type:'line',label:'商談化率',yAxisID:'y2',data:cvMonths.map(k=>{const d=cvMonthlyMap[k];return d&&d.total>0?Math.round((1-d.notConverted/d.total)*100):null;}),borderColor:CNEON.cv_rate,backgroundColor:'rgba(255,230,0,.04)',borderWidth:2,pointRadius:4,pointBackgroundColor:CNEON.cv_rate,tension:.3,spanGaps:true,order:0}
+    ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.dataset.label==='商談化率'?` 商談化率: ${ctx.parsed.y}%`:` ${ctx.dataset.label}: ${ctx.parsed.y}件`}}},scales:{x:{ticks:{color:TC,maxRotation:45,minRotation:45,font:{size:11}},grid:{color:GC}},y:{beginAtZero:true,ticks:{color:TC,font:{size:11}},grid:{color:GC}},y2:{position:'right',beginAtZero:true,max:100,ticks:{color:CNEON.cv_rate,font:{size:11},callback:v=>v+'%'},grid:{drawOnChartArea:false}}}}});
+    charts.cvMember=new Chart(document.getElementById('chartCvMember'),{type:'bar',data:{labels:memberStats.map(s=>s.m),datasets:[{label:'商談化率(%)',data:memberStats.map(s=>s.cvr),backgroundColor:'rgba(0,245,255,.6)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>` 商談化率: ${ctx.parsed.y}%`}}},scales:{x:{ticks:{color:TC,font:{size:11}},grid:{color:GC}},y:{beginAtZero:true,max:100,ticks:{color:TC,font:{size:11},callback:v=>v+'%'},grid:{color:GC}}}}});
+  }
+  if(currentTab==='days'){
+    const stageWonData=[globalM2T_won??0,globalT2E_won??0];
+    const stageLostData=[globalM2T_lost??0,globalT2E_lost??0];
+    charts.stageWon=new Chart(document.getElementById('chartStageWon'),{type:'bar',data:{labels:['面談 → トライアル','トライアル → 完了'],datasets:[{data:stageWonData,backgroundColor:['rgba(0,245,255,.6)','rgba(57,255,20,.6)'],borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>` ${Math.round(ctx.parsed.y)}日`}}},scales:{x:{ticks:{color:TC,font:{size:11}},grid:{color:GC}},y:{beginAtZero:true,ticks:{color:TC,font:{size:11},callback:v=>v+'日'},grid:{color:GC}}}}});
+    charts.stageLost=new Chart(document.getElementById('chartStageLost'),{type:'bar',data:{labels:['面談 → トライアル','トライアル → 完了'],datasets:[{data:stageLostData,backgroundColor:['rgba(0,245,255,.4)','rgba(255,110,180,.6)'],borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>` ${Math.round(ctx.parsed.y)}日`}}},scales:{x:{ticks:{color:TC,font:{size:11}},grid:{color:GC}},y:{beginAtZero:true,ticks:{color:TC,font:{size:11},callback:v=>v+'日'},grid:{color:GC}}}}});
+    charts.daysMember=new Chart(document.getElementById('chartDaysMember'),{type:'bar',data:{labels:memberStats.map(s=>s.m),datasets:[{label:'受注',data:memberStats.map(s=>s.avgDaysWon??0),backgroundColor:'rgba(57,255,20,.65)'},{label:'失注',data:memberStats.map(s=>s.avgDaysLost??0),backgroundColor:'rgba(255,110,180,.65)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:TC,font:{size:12}}}},scales:{x:{ticks:{color:TC,font:{size:11}},grid:{color:GC}},y:{beginAtZero:true,ticks:{color:TC,font:{size:11},callback:v=>v+'日'},grid:{color:GC}}}}});
+  }
+  if(currentTab==='pipeline'){
+    charts.phase=new Chart(document.getElementById('chartPhase'),{type:'bar',data:{labels:sortedPhases,datasets:[{label:'件数',data:sortedPhases.map(p=>phaseCount[p]||0),backgroundColor:'rgba(199,125,255,.7)',borderColor:'rgba(199,125,255,1)',borderWidth:1}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{color:TC,font:{size:11}},grid:{color:GC}},y:{ticks:{color:TC,font:{size:11}},grid:{color:GC}}}}});
+    const pieLanding=YOMI_LABELS.map(y=>yomiStat['land_'+y]||0);
+    charts.yomiBar=new Chart(document.getElementById('chartYomiBar'),{type:'bar',data:{labels:yomiMonths.map(mLabel),datasets:[
+      {type:'bar',label:'Aヨミ',data:yomiMonths.map(k=>yomiMonthlyMap[k].a),backgroundColor:CNEON.a,stack:'land',yAxisID:'y'},
+      {type:'bar',label:'Bヨミ',data:yomiMonths.map(k=>yomiMonthlyMap[k].b),backgroundColor:CNEON.b,stack:'land',yAxisID:'y'},
+      {type:'bar',label:'Dヨミ',data:yomiMonths.map(k=>yomiMonthlyMap[k].d),backgroundColor:CNEON.d,stack:'land',yAxisID:'y'},
+      {type:'line',label:'最大値',yAxisID:'y',data:yomiMonths.map(k=>yomiMonthlyMap[k].max),borderColor:'#aaa',backgroundColor:'transparent',borderWidth:2,borderDash:[4,3],pointRadius:4,pointBackgroundColor:'#aaa',tension:.2,order:0}
+    ]},options:{responsive:true,maintainAspectRatio:false,onClick:(_,els)=>{if(!els.length)return;const k=yomiMonths[els[0].index];currentYomiMonth=currentYomiMonth===k?null:k;renderAll();},plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>` ${ctx.dataset.label}: ¥${fmt(ctx.parsed.y)}`}}},scales:{x:{stacked:true,ticks:{color:TC,maxRotation:45,minRotation:45,font:{size:11}},grid:{color:GC}},y:{stacked:true,beginAtZero:true,ticks:{color:TC,font:{size:11},callback:v=>fmtM(v)},grid:{color:GC}}}}});
+    charts.yomiPie=new Chart(document.getElementById('chartYomiPie'),{type:'doughnut',data:{labels:YOMI_LABELS,datasets:[{data:pieLanding,backgroundColor:[CNEON.a,CNEON.b,CNEON.d],borderWidth:2,borderColor:'#0d0d1a'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:TC,font:{size:12},padding:16}},tooltip:{callbacks:{label:ctx=>{const t=pieLanding.reduce((a,b)=>a+b,0);return` ${ctx.label}: ¥${fmt(ctx.parsed)} (${t>0?Math.round(ctx.parsed/t*100):0}%)`;}}}}}}); 
+  }
+}
+</script>
+</body>
+</html>
