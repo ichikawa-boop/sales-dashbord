@@ -206,10 +206,14 @@ function handleFile(file){
         // ステージ間日数（0以上のみ有効）
         const dMeetToTrial=(firstMeetDate&&trialDate)?Math.max(0,daysDiff(trialDate,firstMeetDate)):null;
         const dTrialToEnd=(trialDate&&endDate)?Math.max(0,daysDiff(endDate,trialDate)):null;
+        const inboundDate=parseDate(r['インバウンド発生日']);
+        // 1900年はExcelの空白デフォルト値のため除外
+        const validInboundDate=(inboundDate&&inboundDate.getFullYear()>1900)?inboundDate:null;
+        const inboundKey=validInboundDate?mkKey(validInboundDate):null;
         const monthKey=closeDate?mkKey(closeDate):null;
         const createdKey=createdDate?mkKey(createdDate):null;
         const isTarget=PIPELINE.includes(phase)&&closeDate&&closeDate>=thisMonth;
-        return{...r,_phase:phase,_owner:owner,_date:closeDate,_lostDate:lostDate,_createdDate:createdDate,_firstMeetDate:firstMeetDate,_trialDate:trialDate,_amount:amt,_dealDays:dealDays,_yomi:yomi,_rate:rate,_landing:rate!==null?amt*rate:0,_endDate:endDate,_dMeetToTrial:dMeetToTrial,_dTrialToEnd:dTrialToEnd,_monthKey:monthKey,_createdKey:createdKey,_isTarget:isTarget};
+        return{...r,_phase:phase,_owner:owner,_date:closeDate,_lostDate:lostDate,_createdDate:createdDate,_firstMeetDate:firstMeetDate,_trialDate:trialDate,_amount:amt,_dealDays:dealDays,_yomi:yomi,_rate:rate,_landing:rate!==null?amt*rate:0,_endDate:endDate,_dMeetToTrial:dMeetToTrial,_dTrialToEnd:dTrialToEnd,_monthKey:monthKey,_createdKey:createdKey,_inboundDate:validInboundDate,_inboundKey:inboundKey,_isTarget:isTarget};
       });
       selectedMembers=new Set(['ALL']);currentTab='win';currentYomiMonth=null;
       dropZone.style.display='none';appDiv.style.display='block';
@@ -325,7 +329,42 @@ function renderAll(){
   // クロス表（全担当者・担当者フィルター適用なし）
   const yomiCrossMap={};yomiMembersAll.forEach(m=>{yomiCrossMap[m]={};yomiMonths.forEach(k=>{yomiCrossMap[m][k]={landing:0,cnt:0};});});yomiBaseAll.forEach(r=>{if(!r._monthKey||!yomiCrossMap[r._owner])return;const c=yomiCrossMap[r._owner][r._monthKey];if(c){c.cnt++;c.landing+=r._landing;}});
 
-  // === 全体ステージ間日数 ===
+  // === ①インバウンド発生日ベース 月別受注率 ===
+  // 分母：インバウンド発生日がその月の商談全数
+  // 受注率 = 受注 ÷ (受注+失注)、進行中は別途カウント
+  function buildLeadBaseMap(rows, keyFn) {
+    const map={};
+    rows.forEach(r=>{
+      const k=keyFn(r);
+      if(!k)return;
+      if(!map[k])map[k]={total:0,won:0,lost:0,pipe:0};
+      map[k].total++;
+      if(WON.includes(r._phase))map[k].won++;
+      else if(LOST.includes(r._phase))map[k].lost++;
+      else if(PIPELINE.includes(r._phase))map[k].pipe++;
+    });
+    return map;
+  }
+  const ibMap=buildLeadBaseMap(rows, r=>r._inboundKey);
+  const crMap=buildLeadBaseMap(rows, r=>r._createdKey);
+  const ibMonths=Object.keys(ibMap).sort();
+  const crMonths=Object.keys(crMap).sort();
+
+  // 担当者別（インバウンド発生日ベース）
+  const ibMemberStats=members.map(m=>{
+    const mr=rows.filter(r=>r._owner===m);
+    const s={m,total:0,won:0,lost:0,pipe:0};
+    mr.forEach(r=>{if(!r._inboundKey)return;s.total++;if(WON.includes(r._phase))s.won++;else if(LOST.includes(r._phase))s.lost++;else if(PIPELINE.includes(r._phase))s.pipe++;});
+    return s;
+  }).filter(s=>s.total>0).sort((a,b)=>b.won-a.won);
+
+  // 担当者別（作成日ベース）
+  const crMemberStats=members.map(m=>{
+    const mr=rows.filter(r=>r._owner===m);
+    const s={m,total:0,won:0,lost:0,pipe:0};
+    mr.forEach(r=>{if(!r._createdKey)return;s.total++;if(WON.includes(r._phase))s.won++;else if(LOST.includes(r._phase))s.lost++;else if(PIPELINE.includes(r._phase))s.pipe++;});
+    return s;
+  }).filter(s=>s.total>0).sort((a,b)=>b.won-a.won);
   const allWon=rows.filter(r=>WON.includes(r._phase));
   const allLost=rows.filter(r=>LOST.includes(r._phase));
   const globalAvgDays=avg(rows.map(r=>r._dealDays));
@@ -414,6 +453,99 @@ function renderAll(){
       <td style="text-align:right;color:var(--text2)">¥${fmt(s.pa)}</td>
     </tr>`).join('')}
   </tbody></table>
+</div>
+<div class="chart-card full" style="margin-bottom:24px">
+  <p class="section-title">①インバウンド発生日ベース 受注率</p>
+  <p style="font-size:11px;color:var(--text2);margin-bottom:14px">分母：インバウンド発生日がその月の商談数 ／ 受注率 = 受注 ÷（受注＋失注）／ 進行中は別途表示</p>
+  <div class="monthly-table-wrap"><table class="monthly-table">
+    <thead>
+      <tr>
+        <th>担当者</th>
+        ${ibMonths.map(k=>`<th colspan="5" style="text-align:center;border-left:1px solid var(--border2)">${mLabel(k)}</th>`).join('')}
+        <th colspan="5" style="text-align:center;border-left:2px solid var(--border2)">合計</th>
+      </tr>
+      <tr>
+        <th></th>
+        ${ibMonths.map(()=>`<th style="border-left:1px solid var(--border2);color:var(--text2)">総数</th><th style="color:var(--won)">受注</th><th style="color:var(--lost)">失注</th><th style="color:var(--pipe)">進行中</th><th style="color:${CNEON.rate}">受注率</th>`).join('')}
+        <th style="border-left:2px solid var(--border2);color:var(--text2)">総数</th><th style="color:var(--won)">受注</th><th style="color:var(--lost)">失注</th><th style="color:var(--pipe)">進行中</th><th style="color:${CNEON.rate}">受注率</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${(()=>{
+        const rows2build=isAllSelected()?['全体',...members]:members.filter(m=>selectedMembers.has(m));
+        return rows2build.map(m=>{
+          const isTotal=m==='全体';
+          const mr=isTotal?rows:rows.filter(r=>r._owner===m);
+          const totAll=mr.filter(r=>r._inboundKey).length;
+          const totW=mr.filter(r=>WON.includes(r._phase)&&r._inboundKey).length;
+          const totL=mr.filter(r=>LOST.includes(r._phase)&&r._inboundKey).length;
+          const totP=mr.filter(r=>PIPELINE.includes(r._phase)&&r._inboundKey).length;
+          const totClosed=totW+totL;
+          const totWr=totClosed>0?Math.round(totW/totClosed*100):null;
+          return`<tr style="${isTotal?'border-top:2px solid var(--border2);font-weight:600':''}">
+            <td>${m}</td>
+            ${ibMonths.map(k=>{
+              const sub=mr.filter(r=>r._inboundKey===k);
+              const w=sub.filter(r=>WON.includes(r._phase)).length;
+              const l=sub.filter(r=>LOST.includes(r._phase)).length;
+              const p=sub.filter(r=>PIPELINE.includes(r._phase)).length;
+              const cl=w+l;
+              const wr=cl>0?Math.round(w/cl*100):null;
+              return`<td style="border-left:1px solid var(--border2);color:var(--text2)">${sub.length||0}</td><td style="color:var(--won);font-weight:600">${w||0}</td><td style="color:var(--lost)">${l||0}</td><td style="color:var(--pipe)">${p||'—'}</td><td style="color:${CNEON.rate};font-size:11px">${wr!==null?wr+'%':'—'}</td>`;
+            }).join('')}
+            <td style="border-left:2px solid var(--border2);color:var(--text2);font-weight:700">${totAll}</td><td style="color:var(--won);font-weight:700">${totW}</td><td style="color:var(--lost)">${totL}</td><td style="color:var(--pipe)">${totP||'—'}</td><td style="color:${CNEON.rate};font-weight:600">${totWr!==null?totWr+'%':'—'}</td>
+          </tr>`;
+        }).join('');
+      })()}
+    </tbody>
+  </table></div>
+</div>
+
+<div class="chart-card full" style="margin-bottom:24px">
+  <p class="section-title">②商談作成日ベース 受注率</p>
+  <p style="font-size:11px;color:var(--text2);margin-bottom:14px">分母：商談作成日がその月の商談数 ／ 受注率 = 受注 ÷（受注＋失注）／ 進行中は別途表示</p>
+  <div class="monthly-table-wrap"><table class="monthly-table">
+    <thead>
+      <tr>
+        <th>担当者</th>
+        ${crMonths.map(k=>`<th colspan="5" style="text-align:center;border-left:1px solid var(--border2)">${mLabel(k)}</th>`).join('')}
+        <th colspan="5" style="text-align:center;border-left:2px solid var(--border2)">合計</th>
+      </tr>
+      <tr>
+        <th></th>
+        ${crMonths.map(()=>`<th style="border-left:1px solid var(--border2);color:var(--text2)">総数</th><th style="color:var(--won)">受注</th><th style="color:var(--lost)">失注</th><th style="color:var(--pipe)">進行中</th><th style="color:${CNEON.rate}">受注率</th>`).join('')}
+        <th style="border-left:2px solid var(--border2);color:var(--text2)">総数</th><th style="color:var(--won)">受注</th><th style="color:var(--lost)">失注</th><th style="color:var(--pipe)">進行中</th><th style="color:${CNEON.rate}">受注率</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${(()=>{
+        const rows2build=isAllSelected()?['全体',...members]:members.filter(m=>selectedMembers.has(m));
+        return rows2build.map(m=>{
+          const isTotal=m==='全体';
+          const mr=isTotal?rows:rows.filter(r=>r._owner===m);
+          const totAll=mr.filter(r=>r._createdKey).length;
+          const totW=mr.filter(r=>WON.includes(r._phase)&&r._createdKey).length;
+          const totL=mr.filter(r=>LOST.includes(r._phase)&&r._createdKey).length;
+          const totP=mr.filter(r=>PIPELINE.includes(r._phase)&&r._createdKey).length;
+          const totClosed=totW+totL;
+          const totWr=totClosed>0?Math.round(totW/totClosed*100):null;
+          return`<tr style="${isTotal?'border-top:2px solid var(--border2);font-weight:600':''}">
+            <td>${m}</td>
+            ${crMonths.map(k=>{
+              const sub=mr.filter(r=>r._createdKey===k);
+              const w=sub.filter(r=>WON.includes(r._phase)).length;
+              const l=sub.filter(r=>LOST.includes(r._phase)).length;
+              const p=sub.filter(r=>PIPELINE.includes(r._phase)).length;
+              const cl=w+l;
+              const wr=cl>0?Math.round(w/cl*100):null;
+              return`<td style="border-left:1px solid var(--border2);color:var(--text2)">${sub.length||0}</td><td style="color:var(--won);font-weight:600">${w||0}</td><td style="color:var(--lost)">${l||0}</td><td style="color:var(--pipe)">${p||'—'}</td><td style="color:${CNEON.rate};font-size:11px">${wr!==null?wr+'%':'—'}</td>`;
+            }).join('')}
+            <td style="border-left:2px solid var(--border2);color:var(--text2);font-weight:700">${totAll}</td><td style="color:var(--won);font-weight:700">${totW}</td><td style="color:var(--lost)">${totL}</td><td style="color:var(--pipe)">${totP||'—'}</td><td style="color:${CNEON.rate};font-weight:600">${totWr!==null?totWr+'%':'—'}</td>
+          </tr>`;
+        }).join('');
+      })()}
+    </tbody>
+  </table></div>
 </div>
 </div>
 
